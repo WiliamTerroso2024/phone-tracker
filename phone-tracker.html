@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão de Smartphones</title>
+    <!-- CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        #map, #modalMap { 
+            height: 400px; 
+            width: 100%;
+            margin: 20px 0;
+        }
+        .marker-info {
+            font-size: 14px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <!-- Abas -->
+        <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="cadastro-tab" data-bs-toggle="tab" data-bs-target="#cadastro" type="button" role="tab">
+                    <i class="fas fa-plus-circle"></i> Novo Cadastro
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="lista-tab" data-bs-toggle="tab" data-bs-target="#lista" type="button" role="tab">
+                    <i class="fas fa-list"></i> Dispositivos
+                    <span class="badge bg-primary" id="deviceCount">0</span>
+                </button>
+            </li>
+        </ul>
+
+        <!-- Conteúdo das Abas -->
+        <div class="tab-content" id="myTabContent">
+            <!-- Aba de Cadastro -->
+            <div class="tab-pane fade show active" id="cadastro" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h3 class="mb-0">Cadastro de Smartphone para Localiação</h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="phoneForm">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="marca" class="form-label">Marca</label>
+                                    <input type="text" class="form-control" id="marca" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="modelo" class="form-label">Modelo</label>
+                                    <input type="text" class="form-control" id="modelo" required>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="imei" class="form-label">IMEI</label>
+                                    <input type="text" class="form-control" id="imei" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="numero" class="form-label">Número</label>
+                                    <input type="tel" class="form-control" id="numero" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Localização (Clique no mapa para selecionar)</label>
+                                <div id="map"></div>
+                                <p id="coordinates" class="text-muted mt-2"></p>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Cadastrar
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aba de Lista -->
+            <div class="tab-pane fade" id="lista" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h3 class="mb-0">Dispositivos Cadastrados</h3>
+                        <button class="btn btn-light" onclick="exportToCSV()">
+                            <i class="fas fa-download"></i> Exportar CSV
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <table id="deviceTable" class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Marca</th>
+                                    <th>Modelo</th>
+                                    <th>IMEI</th>
+                                    <th>Número</th>
+                                    <th>Localização</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal do Mapa -->
+    <div class="modal fade" id="mapModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Localização do Dispositivo</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="modalMap"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+    <script>
+        let map, modalMap, marker, modalMarker;
+        let currentLat, currentLng;
+        let devices = [];
+        let dataTable;
+
+        // Inicializar quando a página carregar
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeMap();
+            initializeDataTable();
+            loadFromLocalStorage();
+        });
+
+        function initializeMap() {
+            // Coordenadas iniciais (centro do Brasil)
+            currentLat = -15.788497;
+            currentLng = -47.879873;
+            
+            // Criar mapa principal
+            map = L.map('map').setView([currentLat, currentLng], 4);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Adicionar marcador inicial
+            marker = L.marker([currentLat, currentLng]).addTo(map);
+
+            // Criar mapa do modal
+            modalMap = L.map('modalMap').setView([currentLat, currentLng], 4);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(modalMap);
+
+            // Evento de clique no mapa
+            map.on('click', function(e) {
+                currentLat = e.latlng.lat;
+                currentLng = e.latlng.lng;
+                marker.setLatLng(e.latlng);
+                updateCoordinatesText();
+            });
+
+            updateCoordinatesText();
+        }
+
+        function initializeDataTable() {
+            dataTable = $('#deviceTable').DataTable({
+                language: {
+                    url: 'https://cdn.datatables.net/plug-ins/1.10.24/i18n/Portuguese-Brasil.json'
+                }
+            });
+        }
+
+        function updateCoordinatesText() {
+            document.getElementById('coordinates').textContent = 
+                `Latitude: ${currentLat.toFixed(6)}, Longitude: ${currentLng.toFixed(6)}`;
+        }
+
+        // Cadastro de dispositivo
+        document.getElementById('phoneForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const device = {
+                marca: document.getElementById('marca').value,
+                modelo: document.getElementById('modelo').value,
+                imei: document.getElementById('imei').value,
+                numero: document.getElementById('numero').value,
+                latitude: currentLat,
+                longitude: currentLng
+            };
+
+            // Verificar IMEI duplicado
+            if (devices.some(d => d.imei === device.imei)) {
+                alert('IMEI já cadastrado!');
+                return;
+            }
+
+            // Adicionar dispositivo
+            devices.push(device);
+            updateTable();
+            saveToLocalStorage();
+            
+            // Limpar formulário
+            this.reset();
+            updateDeviceCount();
+            
+            // Feedback e mudança de tab
+            alert('Dispositivo cadastrado com sucesso!');
+            document.getElementById('lista-tab').click();
+        });
+
+        function updateTable() {
+            dataTable.clear();
+            devices.forEach(device => {
+                dataTable.row.add([
+                    device.marca,
+                    device.modelo,
+                    device.imei,
+                    device.numero,
+                    `<button class="btn btn-sm btn-info" onclick="showLocationOnMap(${device.latitude}, ${device.longitude})">
+                        <i class="fas fa-map-marker-alt"></i> Ver no Mapa
+                    </button>`,
+                    `<button class="btn btn-sm btn-danger" onclick="deleteDevice('${device.imei}')">
+                        <i class="fas fa-trash"></i> Excluir
+                    </button>`
+                ]);
+            });
+            dataTable.draw();
+        }
+
+        function showLocationOnMap(lat, lng) {
+            modalMap.setView([lat, lng], 13);
+            
+            if (modalMarker) {
+                modalMap.removeLayer(modalMarker);
+            }
+            
+            modalMarker = L.marker([lat, lng]).addTo(modalMap);
+            
+            // Mostrar modal
+            new bootstrap.Modal(document.getElementById('mapModal')).show();
+            
+            // Atualizar mapa quando modal é mostrado
+            setTimeout(() => modalMap.invalidateSize(), 250);
+        }
+
+        function deleteDevice(imei) {
+            if (confirm('Tem certeza que deseja excluir este dispositivo?')) {
+                devices = devices.filter(d => d.imei !== imei);
+                updateTable();
+                saveToLocalStorage();
+                updateDeviceCount();
+            }
+        }
+
+        function exportToCSV() {
+            if (devices.length === 0) {
+                alert('Não há dispositivos para exportar.');
+                return;
+            }
+
+            const headers = ['Marca', 'Modelo', 'IMEI', 'Número', 'Latitude', 'Longitude'];
+            const csvContent = [
+                headers.join(','),
+                ...devices.map(d => [
+                    d.marca,
+                    d.modelo,
+                    d.imei,
+                    d.numero,
+                    d.latitude,
+                    d.longitude
+                ].join(','))
+            ].join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'dispositivos.csv';
+            link.click();
+        }
+
+        function saveToLocalStorage() {
+            localStorage.setItem('devices', JSON.stringify(devices));
+        }
+
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('devices');
+            if (saved) {
+                devices = JSON.parse(saved);
+                updateTable();
+                updateDeviceCount();
+            }
+        }
+
+        function updateDeviceCount() {
+            document.getElementById('deviceCount').textContent = devices.length;
+        }
+
+        // Atualizar mapa do modal quando fechado
+        document.getElementById('mapModal').addEventListener('hidden.bs.modal', function () {
+            if (modalMarker) {
+                modalMap.removeLayer(modalMarker);
+            }
+            setTimeout(() => modalMap.invalidateSize(), 250);
+        });
+    </script>
+</body>
+</html>
